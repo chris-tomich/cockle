@@ -1,0 +1,9 @@
+[package]
+name = "cockle"
+version = "0.0.1"
+edition = "2018"
+authors = "Chris Tomich <chris.tomich@digitalnephology.com>"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
