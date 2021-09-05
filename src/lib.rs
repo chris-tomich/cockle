@@ -1,9 +1,19 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData};
 
-pub enum Action<'a> {
-    Run(&'a Command),
-    Help(&'a Command),
+pub enum Action {
+    Unknown(String),
+    Run(Command),
+    Help(Command),
     Exit,
+}
+
+pub trait Informational {
+    fn get_help(&self) -> &Manual;
+}
+
+pub struct Manual {
+    short_description: &'static str,
+    detailed_help: Vec<&'static str>,
 }
 
 pub struct Runtime {}
@@ -24,18 +34,37 @@ impl Parser {
             verbs: verbs_map,
         }
     }
+
+    pub fn parse(&self, input: String) -> Action {
+        let (verb_name, remaining_commands, matching_verb) = match input.split_once(" ") {
+            Some((verb_name, remaining_commands)) => {
+                (verb_name.to_owned(), remaining_commands, self.verbs.get(verb_name))
+            },
+            None => {
+                (input.clone(), "", self.verbs.get(&input))
+            },
+        };
+
+        let action = match matching_verb {
+            Some(verb) => {
+                verb.parse(remaining_commands)
+            },
+            None => Action::Unknown(verb_name),
+        };
+
+        action
+    }
 }
 
 pub struct Verb {
     name: String,
     verbs: HashMap<String, Verb>,
     commands: HashMap<String, Command>,
-    short_description: String,
-    detailed_help: Vec<String>,
+    manual: Box<Manual>,
 }
 
 impl Verb {
-    pub fn new(name: &str, verbs: Option<Vec<Verb>>, commands: Option<Vec<Command>>, short_description: &str, detailed_help: Vec<&str>) -> Verb {
+    pub fn new(name: &str, verbs: Option<Vec<Verb>>, commands: Option<Vec<Command>>, manual: Box<Manual>) -> Verb {
         let mut verbs_map = HashMap::new();
 
         if let Some(verbs) = verbs {
@@ -47,28 +76,44 @@ impl Verb {
         let mut commands_map = HashMap::new();
 
         if let Some(commands) = commands {
+            // TODO: Need to check if a verb with the same name already exists.
             for command in commands {
                 commands_map.insert(command.name().clone(), command);
             }
-        }
-
-        let mut owned_detailed_help = Vec::with_capacity(detailed_help.len());
-
-        for line in detailed_help {
-            owned_detailed_help.push(line.to_owned());
         }
 
         Verb {
             name: name.to_owned(),
             verbs: verbs_map,
             commands: commands_map,
-            short_description: short_description.to_owned(),
-            detailed_help: owned_detailed_help,
+            manual,
         }
     }
 
     pub fn name(&self) -> &String {
         &self.name
+    }
+
+    pub fn parse(&self, input: &str) -> Action {
+        let (command_name, remaining_commands) = match input.split_once(" ") {
+            Some((command_name, remaining_commands)) => (command_name.to_owned(), remaining_commands),
+            None => (input.to_owned(), ""),
+        };
+
+        if self.verbs.contains_key(command_name) {
+
+        }
+        else if self.commands.contains_key(command_name) {
+
+        }
+
+        todo!()
+    }
+}
+
+impl Informational for Verb {
+    fn get_help(&self) -> &Manual {
+        self.manual.as_ref()
     }
 }
 
