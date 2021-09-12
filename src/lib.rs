@@ -1,28 +1,42 @@
 use std::{collections::HashMap, marker::PhantomData};
 
-pub enum Action {
+pub enum Action<'a> {
     Unknown(String),
-    Run(Command),
-    Help(Command),
+    Incorrect(String, &'a Verb<'a>),
+    Run(Box<dyn CommandFunc<'a>>),
+    Help(Box<dyn CommandFunc<'a>>),
     Exit,
+}
+
+pub trait CommandFunc<'a> {
+    fn execute(&self, parameterValues: Vec<ParameterValue<'a>>);
 }
 
 pub trait Informational {
     fn get_help(&self) -> &Manual;
 }
 
-pub struct Manual {
-    short_description: &'static str,
-    detailed_help: Vec<&'static str>,
+pub struct Manual<'a> {
+    short_description: &'a str,
+    detailed_help: Vec<&'a str>,
+}
+
+impl<'a> Manual<'a> {
+    pub fn new(short_description: &'a str, detailed_help: Vec<&'a str>) -> Manual<'a> {
+        Manual {
+            short_description,
+            detailed_help,
+        }
+    }
 }
 
 pub struct Runtime {}
 
-pub struct Parser {
-    verbs: HashMap<String, Verb>,
+pub struct Parser<'a> {
+    verbs: HashMap<String, Verb<'a>>,
 }
 
-impl Parser {
+impl<'a> Parser<'a> {
     pub fn new(verbs: Vec<Verb>) -> Parser {
         let mut verbs_map = HashMap::with_capacity(verbs.len());
 
@@ -56,15 +70,15 @@ impl Parser {
     }
 }
 
-pub struct Verb {
+pub struct Verb<'a> {
     name: String,
-    verbs: HashMap<String, Verb>,
+    verbs: HashMap<String, Verb<'a>>,
     commands: HashMap<String, Command>,
-    manual: Box<Manual>,
+    manual: Manual<'a>,
 }
 
-impl Verb {
-    pub fn new(name: &str, verbs: Option<Vec<Verb>>, commands: Option<Vec<Command>>, manual: Box<Manual>) -> Verb {
+impl<'a> Verb<'a> {
+    pub fn new(name: &str, verbs: Option<Vec<Verb<'a>>>, commands: Option<Vec<Command>>, manual: Manual<'a>) -> Verb<'a> {
         let mut verbs_map = HashMap::new();
 
         if let Some(verbs) = verbs {
@@ -100,31 +114,95 @@ impl Verb {
             None => (input.to_owned(), ""),
         };
 
-        if self.verbs.contains_key(command_name) {
+        if self.verbs.contains_key(&command_name) {
+            let command_verb = self.verbs.get(&command_name).expect(format!("Expected there would be a verb named '{}' but couldn't find it.", command_name).as_str());
 
+            return command_verb.parse(remaining_commands);
         }
-        else if self.commands.contains_key(command_name) {
+        else if self.commands.contains_key(&command_name) {
+            let command = self.commands.get(&command_name).expect(format!("Expected there would be a command named '{}' but couldn't find it.", command_name).as_str());
 
+            return command.parse(remaining_commands);
         }
 
-        todo!()
+        Action::Incorrect(input.to_owned(), self)
     }
 }
 
-impl Informational for Verb {
+impl<'a> Informational for Verb<'a> {
     fn get_help(&self) -> &Manual {
-        self.manual.as_ref()
+        &self.manual
     }
 }
 
 pub struct Command {
     name: String,
-    parameters: HashMap<u8, Parameter>,
+    parameters: Vec<Parameter>,
+    parameters_by_short_name: HashMap<String, usize>,
+    parameters_by_long_name: HashMap<String, usize>,
 }
 
 impl Command {
     pub fn name(&self) -> &String {
         &self.name
+    }
+
+    pub fn parse(&self, parameters: &str) -> Action {
+        let tokens = parameters.split_whitespace();
+
+        let mut parameter_values = Vec::new();
+        let mut parameter_value = None as Option<ParameterValue>;
+
+        for token in tokens {
+            let token_parameter_type_index = {
+                if token.starts_with("--") {
+                    let parameter_name = token.trim_matches('-');
+
+                    match self.parameters_by_long_name.get(parameter_name) {
+                        Some(parameter_type_index) => Some(*parameter_type_index),
+                        None => None,
+                    }
+                }
+                else if token.starts_with("-") {
+                    let parameter_name = token.trim_matches('-');
+
+                    match self.parameters_by_short_name.get(parameter_name) {
+                        Some(parameter_type_index) => Some(*parameter_type_index),
+                        None => None,
+                    }
+                }
+                else {
+                    None
+                }
+            };
+
+            parameter_value = match token_parameter_type_index {
+                Some(parameter_type_index) => {
+                    match self.parameters.get(parameter_type_index) {
+                        Some(parameter_type) => {
+                            if let Some(parameter_value) = parameter_value {
+                                parameter_values.push(parameter_value);
+                            }
+
+                            Some(ParameterValue {
+                                parameter_type,
+                                values: Vec::new(),
+                            })
+                        },
+                        None => return Action::Unknown(token.to_owned()),
+                    }
+                },
+                None => parameter_value,
+            };
+
+            if let None = token_parameter_type_index {
+                if let Some(parameter_value) = &mut parameter_value {
+                    parameter_value.values.push(token.to_owned());
+                }
+            }
+        }
+
+        todo!()
     }
 }
 
@@ -133,9 +211,14 @@ pub struct Parameter {
     long_name: String,
 }
 
+pub struct ParameterValue<'a> {
+    parameter_type: &'a Parameter,
+    values: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{Parser, Verb};
+    use crate::{Manual, Parser, Verb};
 
     #[test]
     fn parse_line() {
@@ -144,10 +227,12 @@ mod tests {
                 "exit",
                 None,
                 None,
-                "exits the tool",
-                vec![
-                    "exits the tool"
-                ],
+                Manual::new(
+                    "exits the tool",
+                    vec![
+                        "exits the tool"
+                    ],
+                ),
             ),
         ]);
     }
