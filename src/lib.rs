@@ -1,21 +1,20 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::{collections::HashMap};
 
+#[derive(Debug)]
 pub enum Action<'a> {
     Unknown(String),
     Incorrect(String, &'a Verb<'a>),
-    Run(Box<dyn CommandFunc<'a>>),
-    Help(Box<dyn CommandFunc<'a>>),
+    BadParameter(String, &'a Command),
+    Run(Vec<ParameterValue<'a>>),
+    Help(Vec<ParameterValue<'a>>),
     Exit,
-}
-
-pub trait CommandFunc<'a> {
-    fn execute(&self, parameterValues: Vec<ParameterValue<'a>>);
 }
 
 pub trait Informational {
     fn get_help(&self) -> &Manual;
 }
 
+#[derive(Debug)]
 pub struct Manual<'a> {
     short_description: &'a str,
     detailed_help: Vec<&'a str>,
@@ -70,6 +69,7 @@ impl<'a> Parser<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct Verb<'a> {
     name: String,
     verbs: HashMap<String, Verb<'a>>,
@@ -135,14 +135,28 @@ impl<'a> Informational for Verb<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct Command {
     name: String,
     parameters: Vec<Parameter>,
-    parameters_by_short_name: HashMap<String, usize>,
+    parameters_by_short_name: HashMap<char, usize>,
     parameters_by_long_name: HashMap<String, usize>,
 }
 
 impl Command {
+    pub fn new(name: &str, parameters: Vec<Parameter>) -> Command {
+        let parameters_ref = &parameters;
+        let parameters_by_short_name = parameters_ref.into_iter().enumerate().map(|(i, x)|(x.short_name, i)).collect::<HashMap<char, usize>>();
+        let parameters_by_long_name = parameters_ref.into_iter().enumerate().map(|(i, x)|(x.long_name.clone(), i)).collect::<HashMap<String, usize>>();
+
+        Command {
+            name: name.to_owned(),
+            parameters,
+            parameters_by_short_name,
+            parameters_by_long_name,
+        }
+    }
+
     pub fn name(&self) -> &String {
         &self.name
     }
@@ -151,89 +165,153 @@ impl Command {
         let tokens = parameters.split_whitespace();
 
         let mut parameter_values = Vec::new();
-        let mut parameter_value = None as Option<ParameterValue>;
 
         for token in tokens {
-            let token_parameter_type_index = {
-                if token.starts_with("--") {
-                    let parameter_name = token.trim_matches('-');
+            if token.starts_with("--") {
+                let parameter_type_token = token.trim_matches('-');
 
-                    match self.parameters_by_long_name.get(parameter_name) {
-                        Some(parameter_type_index) => Some(*parameter_type_index),
-                        None => None,
+                if let Some(parameter_type_index) = self.parameters_by_long_name.get(parameter_type_token) {
+                    if let Some(parameter_type) = self.parameters.get(*parameter_type_index) {
+                        parameter_values.push(ParameterValue::new(parameter_type))
                     }
                 }
-                else if token.starts_with("-") {
-                    let parameter_name = token.trim_matches('-');
+            }
+            else if token.starts_with("-") {
+                let parameter_type_token = token.trim_matches('-');
 
-                    match self.parameters_by_short_name.get(parameter_name) {
-                        Some(parameter_type_index) => Some(*parameter_type_index),
-                        None => None,
+                if parameter_type_token.len() > 1 {
+                    return Action::BadParameter(parameter_type_token.to_owned(), self);
+                }
+
+                if let Some(first_char) = parameter_type_token.chars().next() {
+                    if let Some(parameter_type_index) = self.parameters_by_short_name.get(&first_char) {
+                        if let Some(parameter_type) = self.parameters.get(*parameter_type_index) {
+                            parameter_values.push(ParameterValue::new(parameter_type))
+                        }
                     }
                 }
-                else {
-                    None
-                }
-            };
-
-            parameter_value = match token_parameter_type_index {
-                Some(parameter_type_index) => {
-                    match self.parameters.get(parameter_type_index) {
-                        Some(parameter_type) => {
-                            if let Some(parameter_value) = parameter_value {
-                                parameter_values.push(parameter_value);
-                            }
-
-                            Some(ParameterValue {
-                                parameter_type,
-                                values: Vec::new(),
-                            })
-                        },
-                        None => return Action::Unknown(token.to_owned()),
-                    }
-                },
-                None => parameter_value,
-            };
-
-            if let None = token_parameter_type_index {
-                if let Some(parameter_value) = &mut parameter_value {
+            }
+            else {
+                if let Some(parameter_value) = parameter_values.last_mut() {
                     parameter_value.values.push(token.to_owned());
                 }
             }
         }
 
-        todo!()
+        Action::Run(parameter_values)
     }
 }
 
+#[derive(Debug)]
 pub struct Parameter {
     short_name: char,
     long_name: String,
 }
 
+impl Parameter {
+    pub fn new(short_name: char, long_name: &str) -> Parameter {
+        Parameter {
+            short_name,
+            long_name: long_name.to_owned(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct ParameterValue<'a> {
-    parameter_type: &'a Parameter,
-    values: Vec<String>,
+    pub parameter_type: &'a Parameter,
+    pub values: Vec<String>,
+}
+
+impl<'a> ParameterValue<'a> {
+    pub fn new(parameter_type: &'a Parameter) -> ParameterValue<'a> {
+        ParameterValue {
+            parameter_type,
+            values: Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Manual, Parser, Verb};
+    use crate::{Action, Command, Manual, Parameter, Parser, Verb};
 
     #[test]
-    fn parse_line() {
+    fn parse_command_with_one_parameter_short_name() {
         let parser = Parser::new(vec![
             Verb::new(
-                "exit",
+                "list",
                 None,
-                None,
-                Manual::new(
-                    "exits the tool",
+                Some(
                     vec![
-                        "exits the tool"
+                        Command::new(
+                            "table",
+                            vec![
+                                Parameter::new('i', "name"),
+                            ],
+                        ),
                     ],
                 ),
+                Manual::new(
+                    "list all the elements",
+                    vec![
+                        "",
+                    ]
+                )
             ),
         ]);
+
+        let action = parser.parse("list table -i my_table_name".to_string());
+
+        if let Action::Run(parameter_value) = action {
+            assert_eq!('i', parameter_value.get(0).unwrap().parameter_type.short_name);
+            assert_eq!("name", parameter_value.get(0).unwrap().parameter_type.long_name);
+            assert_eq!("my_table_name", parameter_value.get(0).unwrap().values.get(0).unwrap());
+        }
+        else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn parse_command_with_multiple_parameters() {
+        let parser = Parser::new(vec![
+            Verb::new(
+                "list",
+                None,
+                Some(
+                    vec![
+                        Command::new(
+                            "table",
+                            vec![
+                                Parameter::new('i', "name"),
+                                Parameter::new('n', "count"),
+                            ],
+                        ),
+                    ],
+                ),
+                Manual::new(
+                    "list all the elements",
+                    vec![
+                        "",
+                    ]
+                )
+            ),
+        ]);
+
+        let action = parser.parse("list table -i my_table_name -n 10".to_string());
+        
+        if let Action::Run(parameter_value) = action {
+            assert_eq!('i', parameter_value.get(0).unwrap().parameter_type.short_name);
+            assert_eq!("name", parameter_value.get(0).unwrap().parameter_type.long_name);
+            assert_eq!("my_table_name", parameter_value.get(0).unwrap().values.get(0).unwrap());
+
+            assert_eq!('n', parameter_value.get(1).unwrap().parameter_type.short_name);
+            assert_eq!("count", parameter_value.get(1).unwrap().parameter_type.long_name);
+            assert_eq!("10", parameter_value.get(1).unwrap().values.get(0).unwrap());
+        }
+        else {
+            assert!(false);
+        }
     }
 }
