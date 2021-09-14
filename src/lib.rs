@@ -78,22 +78,18 @@ pub struct Verb<'a> {
 }
 
 impl<'a> Verb<'a> {
-    pub fn new(name: &str, verbs: Option<Vec<Verb<'a>>>, commands: Option<Vec<Command>>, manual: Manual<'a>) -> Verb<'a> {
+    pub fn new(name: &str, verbs: Vec<Verb<'a>>, commands: Vec<Command>, manual: Manual<'a>) -> Verb<'a> {
         let mut verbs_map = HashMap::new();
 
-        if let Some(verbs) = verbs {
-            for verb in verbs {
-                verbs_map.insert(verb.name().clone(), verb);
-            }
+        for verb in verbs {
+            verbs_map.insert(verb.name().clone(), verb);
         }
 
         let mut commands_map = HashMap::new();
 
-        if let Some(commands) = commands {
-            // TODO: Need to check if a verb with the same name already exists.
-            for command in commands {
-                commands_map.insert(command.name().clone(), command);
-            }
+        // TODO: Need to check if a verb with the same name already exists.
+        for command in commands {
+            commands_map.insert(command.name().clone(), command);
         }
 
         Verb {
@@ -145,9 +141,8 @@ pub struct Command {
 
 impl Command {
     pub fn new(name: &str, parameters: Vec<Parameter>) -> Command {
-        let parameters_ref = &parameters;
-        let parameters_by_short_name = parameters_ref.into_iter().enumerate().map(|(i, x)|(x.short_name, i)).collect::<HashMap<char, usize>>();
-        let parameters_by_long_name = parameters_ref.into_iter().enumerate().map(|(i, x)|(x.long_name.clone(), i)).collect::<HashMap<String, usize>>();
+        let parameters_by_short_name = parameters.iter().enumerate().map(|(i, x)|(x.short_name, i)).collect::<HashMap<char, usize>>();
+        let parameters_by_long_name = parameters.iter().enumerate().map(|(i, x)|(x.long_name.clone(), i)).collect::<HashMap<String, usize>>();
 
         Command {
             name: name.to_owned(),
@@ -176,7 +171,7 @@ impl Command {
                     }
                 }
             }
-            else if token.starts_with("-") {
+            else if token.starts_with('-') {
                 let parameter_type_token = token.trim_matches('-');
 
                 if parameter_type_token.len() > 1 {
@@ -191,10 +186,8 @@ impl Command {
                     }
                 }
             }
-            else {
-                if let Some(parameter_value) = parameter_values.last_mut() {
-                    parameter_value.values.push(token.to_owned());
-                }
+            else if let Some(parameter_value) = parameter_values.last_mut() {
+                parameter_value.values.push(token.to_owned());
             }
         }
 
@@ -241,17 +234,15 @@ mod tests {
         let parser = Parser::new(vec![
             Verb::new(
                 "list",
-                None,
-                Some(
-                    vec![
-                        Command::new(
-                            "table",
-                            vec![
-                                Parameter::new('i', "name"),
-                            ],
-                        ),
-                    ],
-                ),
+                vec![],
+                vec![
+                    Command::new(
+                        "table",
+                        vec![
+                            Parameter::new('i', "name"),
+                        ],
+                    ),
+                ],
                 Manual::new(
                     "list all the elements",
                     vec![
@@ -278,18 +269,16 @@ mod tests {
         let parser = Parser::new(vec![
             Verb::new(
                 "list",
-                None,
-                Some(
-                    vec![
-                        Command::new(
-                            "table",
-                            vec![
-                                Parameter::new('i', "name"),
-                                Parameter::new('n', "count"),
-                            ],
-                        ),
-                    ],
-                ),
+                vec![],
+                vec![
+                    Command::new(
+                        "table",
+                        vec![
+                            Parameter::new('i', "name"),
+                            Parameter::new('n', "count"),
+                        ],
+                    ),
+                ],
                 Manual::new(
                     "list all the elements",
                     vec![
