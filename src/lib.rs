@@ -14,17 +14,19 @@ pub trait Informational {
     fn get_help(&self) -> &Manual;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Manual<'a> {
     short_description: &'a str,
     detailed_help: Vec<&'a str>,
 }
 
 impl<'a> Manual<'a> {
-    pub fn new(short_description: &'a str, detailed_help: Vec<&'a str>) -> Manual<'a> {
+    pub fn new(short_description: &'a str, detailed_help: &[&'a str]) -> Manual<'a> {
+        let lines = detailed_help.iter().map(|x| x.clone()).collect();
+
         Manual {
             short_description,
-            detailed_help,
+            detailed_help: lines,
         }
     }
 }
@@ -36,12 +38,8 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(verbs: Vec<Verb>) -> Parser {
-        let mut verbs_map = HashMap::with_capacity(verbs.len());
-
-        for verb in verbs {
-            verbs_map.insert(verb.name().clone(), verb);
-        }
+    pub fn new(verbs: &[Verb<'a>]) -> Self {
+        let verbs_map = verbs.iter().map(|x|(x.name().clone(), x.clone())).collect();
 
         Parser {
             verbs: verbs_map,
@@ -69,7 +67,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Verb<'a> {
     name: String,
     verbs: HashMap<String, Verb<'a>>,
@@ -78,19 +76,11 @@ pub struct Verb<'a> {
 }
 
 impl<'a> Verb<'a> {
-    pub fn new(name: &str, verbs: Vec<Verb<'a>>, commands: Vec<Command>, manual: Manual<'a>) -> Verb<'a> {
-        let mut verbs_map = HashMap::new();
-
-        for verb in verbs {
-            verbs_map.insert(verb.name().clone(), verb);
-        }
-
-        let mut commands_map = HashMap::new();
+    pub fn new(name: &str, verbs: &[Verb<'a>], commands: &[Command], manual: Manual<'a>) -> Self {
+        let verbs_map = verbs.iter().map(|x|(x.name().clone(), x.clone())).collect();
 
         // TODO: Need to check if a verb with the same name already exists.
-        for command in commands {
-            commands_map.insert(command.name().clone(), command);
-        }
+        let commands_map = commands.iter().map(|x|(x.name().clone(), x.clone())).collect();
 
         Verb {
             name: name.to_owned(),
@@ -131,7 +121,7 @@ impl<'a> Informational for Verb<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Command {
     name: String,
     parameters: Vec<Parameter>,
@@ -140,9 +130,11 @@ pub struct Command {
 }
 
 impl Command {
-    pub fn new(name: &str, parameters: Vec<Parameter>) -> Command {
+    pub fn new(name: &str, parameters: &[Parameter]) -> Self {
         let parameters_by_short_name = parameters.iter().enumerate().map(|(i, x)|(x.short_name, i)).collect::<HashMap<char, usize>>();
         let parameters_by_long_name = parameters.iter().enumerate().map(|(i, x)|(x.long_name.clone(), i)).collect::<HashMap<String, usize>>();
+        
+        let parameters = parameters.iter().map(|parameter| parameter.clone()).collect();
 
         Command {
             name: name.to_owned(),
@@ -195,14 +187,14 @@ impl Command {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Parameter {
     short_name: char,
     long_name: String,
 }
 
 impl Parameter {
-    pub fn new(short_name: char, long_name: &str) -> Parameter {
+    pub fn new(short_name: char, long_name: &str) -> Self {
         Parameter {
             short_name,
             long_name: long_name.to_owned(),
@@ -217,7 +209,7 @@ pub struct ParameterValue<'a> {
 }
 
 impl<'a> ParameterValue<'a> {
-    pub fn new(parameter_type: &'a Parameter) -> ParameterValue<'a> {
+    pub fn new(parameter_type: &'a Parameter) -> Self {
         ParameterValue {
             parameter_type,
             values: Vec::new(),
@@ -231,23 +223,21 @@ mod tests {
 
     #[test]
     fn parse_command_with_one_parameter_short_name() {
-        let parser = Parser::new(vec![
+        let parser = Parser::new(&vec![
             Verb::new(
                 "list",
-                vec![],
-                vec![
+                &vec![],
+                &vec![
                     Command::new(
                         "table",
-                        vec![
+                        &vec![
                             Parameter::new('i', "name"),
                         ],
                     ),
                 ],
                 Manual::new(
                     "list all the elements",
-                    vec![
-                        "",
-                    ]
+                    &vec![],
                 )
             ),
         ]);
@@ -266,14 +256,14 @@ mod tests {
 
     #[test]
     fn parse_command_with_multiple_parameters() {
-        let parser = Parser::new(vec![
+        let parser = Parser::new(&vec![
             Verb::new(
                 "list",
-                vec![],
-                vec![
+                &vec![],
+                &vec![
                     Command::new(
                         "table",
-                        vec![
+                        &vec![
                             Parameter::new('i', "name"),
                             Parameter::new('n', "count"),
                         ],
@@ -281,9 +271,7 @@ mod tests {
                 ],
                 Manual::new(
                     "list all the elements",
-                    vec![
-                        "",
-                    ]
+                    &vec![],
                 )
             ),
         ]);
